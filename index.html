@@ -39,6 +39,8 @@
     <h4 id="title"></h4>
 </div>
 
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/1.3.3/jspdf.min.js"></script>
 <script src="https://unpkg.com/bpmn-js/dist/bpmn-viewer.development.js"></script>
 <script>
     // viewer instance, lazily initialized
@@ -116,7 +118,10 @@
         // canvas.resized();
         bpmnViewer.get('canvas').zoom('fit-viewport');
 
-        bpmnViewer.savePNG();
+        // bpmnViewer.savePNG();
+        bpmnViewer.savePDF();
+        // alternativeSaveToPDF();
+
 
         return {
             width,
@@ -6869,6 +6874,165 @@ execution.setVariable("jsonAttributes", JsonOutput.toJson(parsedJsonAttributes))
             }
         });
     };
+
+    bpmnViewer.savePDF = function () {
+        var t = this;
+
+        bpmnViewer.saveSVG(function (err, svg) {
+            console.log(svg);
+            if (err) {
+                return;
+            }
+            try {
+                // can use the domUrl function from the browser
+                var domUrl = window.URL || window.webkitURL || window;
+                if (!domUrl) {
+                    throw new Error("(browser doesnt support this)")
+                }
+                console.log(bpmnViewer.get('canvas').viewbox());
+                const { width, height } = bpmnViewer.get('canvas').viewbox().inner;
+                // figure out the height and width from svg text
+                // var match = svg.match(/height=\"(\d+)/m);
+                // var height = match && match[1] ? parseInt(match[1], 10) : 200;
+                // var match = svg.match(/width=\"(\d+)/m);
+                // var width = match && match[1] ? parseInt(match[1], 10) : 200;
+                var margin = t.margin || 0; // set margin
+                var fill = t.fill || '#ffffff'; // set fill color
+
+                // it needs a namespace
+                if (!svg.match(/xmlns=\"/mi)) {
+                    svg = svg.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
+                }
+
+                // create a canvas element to pass through
+                var canvas = document.createElement("canvas");
+                canvas.width = width + margin * 2;
+                canvas.height = height + margin * 2;
+                var ctx = canvas.getContext("2d");
+
+
+                // make a blob from the svg
+                var svg = new Blob([svg], {
+                    type: "image/svg+xml;charset=utf-8"
+                });
+
+                // create a dom object for that image
+                var url = domUrl.createObjectURL(svg);
+                console.log(url)
+                // create a new image to hold it the converted type
+                var img = new Image;
+
+                // when the image is loaded we can get it as base64 url
+                img.onload = function () {
+                    // draw it to the canvas
+                    ctx.drawImage(this, margin, margin);
+                    console.log(canvas);
+                    // if it needs some styling, we need a new canvas
+                    if (fill) {
+                        var styled = document.createElement("canvas");
+                        console.log(canvas);
+                        styled.width = canvas.width;
+                        styled.height = canvas.height;
+                        var styledCtx = styled.getContext("2d");
+                        styledCtx.save();
+                        styledCtx.fillStyle = fill;
+                        styledCtx.fillRect(0, 0, canvas.width, canvas.height);
+                        styledCtx.strokeRect(0, 0, canvas.width, canvas.height);
+                        styledCtx.restore();
+                        console.log(styledCtx)
+                        styledCtx.drawImage(canvas, 0, 0);
+                        canvas = styled;
+                    }
+                    // we don't need the original any more
+                    domUrl.revokeObjectURL(url);
+                    // now we can resolve the promise, passing the base64 url
+                    //resolve(canvas.toDataURL());
+                    var imgData = canvas.toDataURL("image/jpeg", 1.0);
+                    var pdf = new jsPDF({
+                        orientation: "landscape",
+                        unit: "px",
+                        format: [canvas.width, canvas.height]
+                    });
+
+                    pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
+
+
+                    var downloadLink = document.createElement('a');
+                    downloadLink.innerHTML = 'Get BPMN PNG';
+                    downloadLink.href = pdf.save("download.pdf");
+                    downloadLink.onclick = function (event) {
+                        document.body.removeChild(event.target);
+                    };
+                    downloadLink.style.visibility = 'hidden';
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                };
+
+                // load the image
+                img.src = url;
+
+            } catch (err) {
+                reject('failed to convert svg to png ' + err);
+            }
+        });
+    };
+    const alternativeSaveToPDF = async (tag) => {
+        // const printedDiv = document.getElementById("canvas");
+        // console.log(printedDiv);
+        // const { width: canvas_image_width, height: canvas_image_height } = printedDiv.style;
+        // const PDF_Width = canvas_image_width;
+        // const PDF_Height = canvas_image_height;
+
+        // html2canvas().then(function (canvas) {
+        //     var imgData = canvas.toDataURL("image/jpeg", 1.0);
+        //     var pdf = new jsPDF({
+        //         orientation: "landscape",
+        //         unit: "px",
+        //         format: [PDF_Width, PDF_Height]
+        //     });
+        //     let totalPDFPages = Math.ceil(canvas_image_height / PDF_Height) - 1;
+        //     pdf.addImage(imgData, 'JPG', 0, 0, canvas_image_width, canvas_image_height);
+        //     for (var i = 1; i <= totalPDFPages; i++) {
+        //         pdf.addPage(PDF_Width, PDF_Height);
+        //         pdf.addImage(imgData, 'JPG', 0, 0, canvas_image_width, canvas_image_height);
+        //     }
+        //     pdf.save("Your_PDF_Name.pdf");
+        //     // $(".html-content").hide();
+        //     var downloadLink = document.createElement('a');
+        //     // downloadLink.download = fileName;
+        //     downloadLink.innerHTML = 'Get BPMN PNG';
+        //     downloadLink.href = canvas.toDataURL();
+        //     downloadLink.onclick = function (event) {
+        //         document.body.removeChild(event.target);
+        //     };
+        //     downloadLink.style.visibility = 'hidden';
+        //     document.body.appendChild(downloadLink);
+        //     downloadLink.click();
+        // });
+        var HTML_ELEMENT = document.querySelector('#canvas');
+        var HTML_Width = HTML_ELEMENT.offsetWidth;
+        var HTML_Height = HTML_ELEMENT.offsetHeight;
+        var top_left_margin = 15;
+        var PDF_Width = HTML_Width + (top_left_margin * 2);
+        var PDF_Height = (PDF_Width * 1.5) + (top_left_margin * 2);
+        var canvas_image_width = HTML_Width;
+        var canvas_image_height = HTML_Height;
+
+        var totalPDFPages = Math.ceil(HTML_Height / PDF_Height) - 1;
+
+        html2canvas(HTML_ELEMENT).then(function (canvas) {
+            var imgData = canvas.toDataURL("image/jpeg", 1.0);
+            var pdf = new jsPDF('p', 'pt', [PDF_Width, PDF_Height]);
+            pdf.addImage(imgData, 'JPG', top_left_margin, top_left_margin, canvas_image_width, canvas_image_height);
+            for (var i = 1; i <= totalPDFPages; i++) {
+                pdf.addPage(PDF_Width, PDF_Height);
+                pdf.addImage(imgData, 'JPG', top_left_margin, -(PDF_Height*i)+(top_left_margin*4),canvas_image_width,canvas_image_height);
+            }
+            pdf.save("Your_PDF_Name.pdf");
+            // HTML_ELEMENT.hide();
+        });
+    }
 </script>
 </body>
 </html>
+
